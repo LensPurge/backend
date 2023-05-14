@@ -22,32 +22,37 @@ class BigQueryHandler:
 
         self.following = self.get_followers(addr) # done: ids of the followers
 
-        collection_thread = threading.Thread(target= self.get_collections, args  =(addr,timestamp))
-        collection_thread.start()
+        # collection_thread = threading.Thread(target= self.get_collections, args  =(addr,timestamp))
+        # collection_thread.start()
         #collections = self.get_collections(addr, timestamp)#done: ids of profiles of collections you got
+        self.get_collections(addr, timestamp)#done: ids of profiles of collections you got
 
-        comment_thread = threading.Thread(target= self.get_comments, args  =(id, timestamp))
-        comment_thread.start()
+        # comment_thread = threading.Thread(target= self.get_comments, args  =(id, timestamp))
+        # comment_thread.start()
         #comments = self.get_comments(id, timestamp) #done: ids of profiles you commented on
+        self.get_comments(id, timestamp) #done: ids of profiles you commented on
 
-        reactions_thread = threading.Thread(target= self.get_reactions, args  =(id, timestamp))
-        reactions_thread.start()
+        # reactions_thread = threading.Thread(target= self.get_reactions, args  =(id, timestamp))
+        # reactions_thread.start()
         #reactions = self.get_reactions(id, timestamp) # done: ids of profiles you reacted on
+        self.get_reactions(id, timestamp) # done: ids of profiles you reacted on
 
-        mirrors_comments_thread = threading.Thread(target= self.get_mirrors_comments, args  =(id, timestamp))
-        mirrors_comments_thread.start()
+        # mirrors_comments_thread = threading.Thread(target= self.get_mirrors_comments, args  =(id, timestamp))
+        # mirrors_comments_thread.start()
         #mirrors_comments = self.get_mirrors_comments(id, timestamp)#done: profiles where you mirrored a comment
+        self.get_mirrors_comments(id, timestamp)#done: profiles where you mirrored a comment
         
-        mirrors_posts_thread = threading.Thread(target= self.get_mirrors_posts, args  =(id, timestamp))
-        mirrors_posts_thread.start()
+        # mirrors_posts_thread = threading.Thread(target= self.get_mirrors_posts, args  =(id, timestamp))
+        # mirrors_posts_thread.start()
         #mirrors_posts = self.get_mirrors_posts(id,timestamp)#done: profiles where you mirrored a post
+        self.get_mirrors_posts(id,timestamp)#done: profiles where you mirrored a post
 
       
-        collection_thread.join()
-        comment_thread.join()
-        reactions_thread.join()
-        mirrors_comments_thread.join()
-        mirrors_posts_thread.join()
+        # collection_thread.join()
+        # comment_thread.join()
+        # reactions_thread.join()
+        # mirrors_comments_thread.join()
+        # mirrors_posts_thread.join()
 
 
         mapping_factor = [
