@@ -23,5 +23,5 @@ def update_record():
     easy_kills = handler.run(profile_id, timestamp)
     return jsonify(easy_kills)
 
-#app.run()
+app.run()
 

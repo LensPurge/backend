@@ -12,8 +12,8 @@ class BigQueryHandler:
     TIMESTAMP_PLACEHODLER = "XXXTIMESTAMPXXX"#"2023-03-05" y, m, d    
     
     def __init__(self):
-        #os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  =r"C:\Users\Demo\git\eth_global\backend\bigquery\minimalens-f0f35b81ae0f.json"
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  ="/home/pbbecker/backend/bigquery/py/minimalens-f0f35b81ae0f.json"
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  =r"C:\Users\Demo\git\eth_global\backend\bigquery\minimalens-f0f35b81ae0f.json"
+        #os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  ="/home/pbbecker/backend/bigquery/py/minimalens-f0f35b81ae0f.json"
         time_ = time.time()
         self.client = bigquery.Client()
         print(time.time() -time_)
@@ -157,6 +157,7 @@ class BigQueryHandler:
             url = url.replace("ipfs://", "https://ipfs.io/ipfs/")
         if url.startswith("https://ipfs.infura.io/ipfs/"):
             url = url.replace("https://ipfs.infura.io/ipfs/", "https://ipfs.io/ipfs/")
+        return url
 
     def get_followers(self,addr):
         try:
