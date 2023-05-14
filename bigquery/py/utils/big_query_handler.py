@@ -12,19 +12,19 @@ class BigQueryHandler:
     TIMESTAMP_PLACEHODLER = "XXXTIMESTAMPXXX"#"2023-03-05" y, m, d    
     
     def __init__(self):
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  =r"C:\Users\Demo\git\eth_global\backend\bigquery\minimalens-f0f35b81ae0f.json"
+        #os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  =r"C:\Users\Demo\git\eth_global\backend\bigquery\minimalens-f0f35b81ae0f.json"
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  ="/home/pbbecker/backend/bigquery/py/minimalens-f0f35b81ae0f.json"
         time_ = time.time()
         self.client = bigquery.Client()
         print(time.time() -time_)
         self.cacher = LensCacher()
 
-    def run(self, id, timestamp):
+    def run(self, addr, timestamp):
 
+        id =  self.get_profile_id(addr)
+        #addr = self.get_addr(id) #done 
         if self.cacher.is_saved(id, timestamp):
             return self.cacher.get_saved(id,timestamp)
-        
-        # = self.get_profile_id(addr)
-        addr = self.get_addr(id) #done 
 
         self.following = self.get_followers(addr) # done: ids of the followers
 
@@ -75,6 +75,8 @@ class BigQueryHandler:
         #Now add the ones, which we didn not interacted with.
         following_but_no_interaction = list(set(self.following) - set(scores.keys()))
         profile_infos =  self.get_profile_infos(following_but_no_interaction)
+
+
         self.cacher.add_log(profile_infos, id, timestamp)
         return profile_infos
 
