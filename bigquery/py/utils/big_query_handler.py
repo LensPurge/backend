@@ -1,8 +1,10 @@
 from google.cloud import bigquery
+from google.api_core.exceptions import BadRequest
 import os 
 from . import sql_templates as t
 import threading
 import time
+from .lens_cacher import LensCacher
 
 class BigQueryHandler:
     ID_PLACEHOLDER = "XXXIDXXX"
@@ -14,8 +16,12 @@ class BigQueryHandler:
         time_ = time.time()
         self.client = bigquery.Client()
         print(time.time() -time_)
+        self.cacher = LensCacher()
 
     def run(self, id, timestamp):
+
+        if self.cacher.is_saved(id, timestamp):
+            return self.cacher.get_saved(id,timestamp)
         
         # = self.get_profile_id(addr)
         addr = self.get_addr(id) #done 
@@ -68,8 +74,9 @@ class BigQueryHandler:
         #now we have scores of the ones we interacted with. 
         #Now add the ones, which we didn not interacted with.
         following_but_no_interaction = list(set(self.following) - set(scores.keys()))
-        return self.get_profile_infos(following_but_no_interaction)
-        
+        profile_infos =  self.get_profile_infos(following_but_no_interaction)
+        self.cacher.add_log(profile_infos, id, timestamp)
+        return profile_infos
 
 
     def calculate_scores(self,mapping_factor):
@@ -116,20 +123,30 @@ class BigQueryHandler:
         for row in result: return row["profile_id"]
 
     def get_profile_infos(self, ids):
-        template = t.PROFILE_INFOS
-        ids = str(tuple(ids))
-        template = template.replace(self.ID_PLACEHOLDER, ids)
-        result = self.query(template)
+        try:
+            ids_copy = ids.copy()
+            template = t.PROFILE_INFOS
+            if len(ids) == 1:
+                ids = "('" + str(ids[0]) +"')"
+            else:
+                ids = str(tuple(ids))
+            template = template.replace(self.ID_PLACEHOLDER, ids)
+            result = self.query(template)
 
-        infos = {
-            row["profile_id"]:{
-                "img_link" : self.format_profile_link(row["profile_picture_s3_url"]),
-                "handle": row["handle"],
-                "name": row["name"]
-                } 
-            for row in result
-        }
-        return infos
+            nft_adresses = self.get_nft_addr(ids_copy)
+
+            infos = {
+                row["profile_id"]:{
+                    "img_link" : self.format_profile_link(row["profile_picture_s3_url"]),
+                    "handle": row["handle"],
+                    "name": row["name"],
+                    "nft_addr": nft_adresses[row["profile_id"]]
+                    } 
+                for row in result
+            }
+            return infos
+        except BadRequest as e:
+            return {}
     
     def format_profile_link(self, url):
         if url is None:
@@ -140,66 +157,112 @@ class BigQueryHandler:
             url = url.replace("https://ipfs.infura.io/ipfs/", "https://ipfs.io/ipfs/")
 
     def get_followers(self,addr):
-        result =  self.get_query_with_address("followers", addr)
-        ids_following = [row["follow_profile_id"] for row in result]
-        return ids_following
+        try:
+            result =  self.get_query_with_address("followers", addr)
+            ids_following = [row["follow_profile_id"] for row in result]
+            return ids_following
+        except BadRequest as e:
+            return []
+        
 
     def get_collections(self, addr, timestamp):
-        result =  self.get_query_with_address("collections", addr, timestamp)
-        pub_ids_of_collections = [(row["publication_id"], row["block_timestamp"]) for row in result]
-        #profile id is the first part of publication id
-        profile_ids_of_collection = [(x.split("-")[0], y) for x, y in pub_ids_of_collections]
-        self.collections =  profile_ids_of_collection
+        try:
+            result =  self.get_query_with_address("collections", addr, timestamp)
+            pub_ids_of_collections = [(row["publication_id"], row["block_timestamp"]) for row in result]
+            #profile id is the first part of publication id
+            profile_ids_of_collection = [(x.split("-")[0], y) for x, y in pub_ids_of_collections]
+            self.collections =  profile_ids_of_collection
+        except BadRequest as e:
+            self.collections = []
 
     def get_comments(self, profile_id, timestamp):
-        result =  self.get_query_with_profile_id("comments",profile_id, timestamp )
-        profile_ids_you_commented_on = [(row["profile_id"], row["block_timestamp"]) for row in result]
-        self.comments =  profile_ids_you_commented_on
+        try:
+            result =  self.get_query_with_profile_id("comments",profile_id, timestamp )
+            profile_ids_you_commented_on = [(row["profile_id"], row["block_timestamp"]) for row in result]
+            self.comments =  profile_ids_you_commented_on
+        except BadRequest as e:
+            self.comments = []
 
     def get_reactions(self, profile_id, timestamp):
-        result =  self.get_query_with_profile_id("reactions",profile_id, timestamp )
-        publication_ids_you_reacted_on = [(row["publication_id"], row["action_at"]) for row in result]
-        #profile id is the first part of publication id
-        profile_ids_you_reacted_on = [(x.split("-")[0],y) for x,y in publication_ids_you_reacted_on]
-        self.reactions =  profile_ids_you_reacted_on
+        try:
+            result =  self.get_query_with_profile_id("reactions",profile_id, timestamp )
+            publication_ids_you_reacted_on = [(row["publication_id"], row["action_at"]) for row in result]
+            #profile id is the first part of publication id
+            profile_ids_you_reacted_on = [(x.split("-")[0],y) for x,y in publication_ids_you_reacted_on]
+            self.reactions =  profile_ids_you_reacted_on
+        except BadRequest as e:
+            self.reactions = []
 
     def get_mirrors_comments(self, profile_id, timestamp):
-        result =  self.get_query_with_profile_id("mirrors_comments_sub",profile_id, timestamp )
-        comment_ids = [row["is_related_to_comment"] for row in result]
-        comment_ids = str(tuple(comment_ids))
-        timestamps = [row["block_timestamp"] for row in result]
+        try:
+            result =  self.get_query_with_profile_id("mirrors_comments_sub",profile_id, timestamp )
+            comment_ids = [row["is_related_to_comment"] for row in result]
+            if comment_ids == []:
+                self.mirrors_comments = []
+                return
+            if len(comment_ids )==1:
+                comment_ids = "(" + str(comment_ids[0]) + ")"
+            else:
+                comment_ids = str(tuple(comment_ids))
+            timestamps = [row["block_timestamp"] for row in result]
 
-        comment_ids_and_timestamps = [(a,b) for a,b in zip(comment_ids, timestamps)]
+            comment_ids_and_timestamps = [(a,b) for a,b in zip(comment_ids, timestamps)]
 
-        result =  self.get_query_with_profile_id("mirrors_comments",comment_ids, timestamp )
-        profiles_which_comments_the_id_mirrored=[row["comment_by_profile_id"] for row in result]
-        comment_ids_2 = [row["comment_id"] for row in result]
+            result =  self.get_query_with_profile_id("mirrors_comments",comment_ids, timestamp )
+            profiles_which_comments_the_id_mirrored=[row["comment_by_profile_id"] for row in result]
+            comment_ids_2 = [row["comment_id"] for row in result]
+            if comment_ids_2 == []:
+                self.mirrors_comments = []
+                return 
 
-        post_ids_and_profile_ids = [(a,b) for a,b in zip(comment_ids_2, profiles_which_comments_the_id_mirrored)]
+            comment_ids_and_profile_ids = [(a,b) for a,b in zip(comment_ids_2, profiles_which_comments_the_id_mirrored)]
 
-        profile_ids_and_timestamps = self.match_tuples(post_ids_and_profile_ids, post_ids_and_profile_ids)
+            profile_ids_and_timestamps = self.match_tuples(comment_ids_and_profile_ids, comment_ids_and_timestamps)
 
-        self.mirrors_comments =  profiles_which_comments_the_id_mirrored
+            self.mirrors_comments =  profile_ids_and_timestamps
+        except Exception as e:
+            self.mirrors_comments =[]
     
     def get_mirrors_posts(self, profile_id, timestamp):
-        result =  self.get_query_with_profile_id("mirrors_posts_sub",profile_id, timestamp )
-        post_ids = [row["is_related_to_post"] for row in result]
-        post_ids = str(tuple(post_ids))
-        timestamps = [row["block_timestamp"] for row in result]
+        try:
+            result =  self.get_query_with_profile_id("mirrors_posts_sub",profile_id, timestamp )
+            post_ids = [row["is_related_to_post"] for row in result]
+            if post_ids == []:
+                self.mirrors_posts = []
+                return 
+            post_ids = str(tuple(post_ids))
+            timestamps = [row["block_timestamp"] for row in result]
 
-        post_ids_and_timestamps = [(a,b) for a,b in zip(post_ids, timestamps)]
+            post_ids_and_timestamps = [(a,b) for a,b in zip(post_ids, timestamps)]
 
 
-        result =  self.get_query_with_profile_id("mirrors_posts",post_ids, timestamp )
-        profiles_which_posts_the_id_mirrored=[row["profile_id"] for row in result]
-        post_ids_2 = [row["post_id"] for row in result]
+            result =  self.get_query_with_profile_id("mirrors_posts",post_ids, timestamp )
+            profiles_which_posts_the_id_mirrored=[row["profile_id"] for row in result]
+            post_ids_2 = [row["post_id"] for row in result]
+            if post_ids_2 ==[]:
+                self.mirrors_posts = []
+                return 
 
-        post_ids_and_profile_ids = [(a,b) for a,b in zip(post_ids_2, profiles_which_posts_the_id_mirrored)]
+            post_ids_and_profile_ids = [(a,b) for a,b in zip(post_ids_2, profiles_which_posts_the_id_mirrored)]
 
-        profile_ids_and_timestamps = self.match_tuples(post_ids_and_profile_ids, post_ids_and_timestamps)
+            profile_ids_and_timestamps = self.match_tuples(post_ids_and_profile_ids, post_ids_and_timestamps)
 
-        self.mirrors_posts =  profile_ids_and_timestamps
-
+            self.mirrors_posts =  profile_ids_and_timestamps
+        except BadRequest as e:
+            self.mirrors_posts = []
+    
+    def get_nft_addr(self, ids):
+        try:
+            if len(ids) == 1:
+                ids = "('" + str(ids[0]) +"')"
+            else:
+                ids = str(tuple(ids))
+            result =  self.get_query_with_profile_id("nft_addr", ids)
+            profile_ids_and_nft_adrrs = {row["profile_id"]: row["follow_nft_address"] for row in result}
+            return profile_ids_and_nft_adrrs
+            
+        except BadRequest as e:
+            self.collections = []
 
     def match_tuples(self, t1, t2):
         #t1 = [('a1','b1')]
@@ -222,7 +285,8 @@ class BigQueryHandler:
             "mirrors_posts_sub": t.MIRRORS_POSTS_SUB,
             "reactions": t.REACTIONS,
             "comments": t.COMMENT,
-            "address": t.ADDRESS
+            "address": t.ADDRESS,
+            "nft_addr": t.NFT_ADDR,
         }
 
         if template_type not in templates:

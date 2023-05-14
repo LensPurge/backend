@@ -105,3 +105,10 @@ FROM
 WHERE 
 profile_id IN XXXIDXXX
 """
+
+NFT_ADDR = """SELECT 
+follow_nft_address, profile_id
+FROM
+`lens-public-data.mumbai.public_profile_follow_nft`
+where profile_id IN XXXIDXXX
+"""

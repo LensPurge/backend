@@ -1,6 +1,7 @@
 from utils.big_query_handler import BigQueryHandler
 from flask import Flask, jsonify, request
 import json
+from flask_cors import CORS
 
 
 timestamp = "2023-05-01 09:00:00"
@@ -8,6 +9,7 @@ timestamp = "2023-05-01 09:00:00"
 
 handler = BigQueryHandler()
 app = Flask(__name__)
+CORS(app)
 
 
     
