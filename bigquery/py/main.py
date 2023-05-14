@@ -21,8 +21,5 @@ def update_record():
     easy_kills = handler.run(profile_id, timestamp)
     return jsonify(easy_kills)
 
-app.run()
-#TODO fix reactions and collections
+#app.run()
 
-
-#TODO : frontend braucht letzte interaktion
