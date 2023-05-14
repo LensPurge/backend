@@ -1,7 +1,8 @@
 from google.cloud import bigquery
 import os 
 from . import sql_templates as t
-
+import threading
+import time
 
 class BigQueryHandler:
     ID_PLACEHOLDER = "XXXIDXXX"
@@ -10,26 +11,51 @@ class BigQueryHandler:
     
     def __init__(self):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"]  =r"C:\Users\Demo\git\eth_global\backend\bigquery\minimalens-f0f35b81ae0f.json"
+        time_ = time.time()
         self.client = bigquery.Client()
+        print(time.time() -time_)
 
     def run(self, id, timestamp):
         
         # = self.get_profile_id(addr)
         addr = self.get_addr(id) #done 
+
         self.following = self.get_followers(addr) # done: ids of the followers
+
+        collection_thread = threading.Thread(target= self.get_collections, args  =(addr,timestamp))
+        collection_thread.start()
+        #collections = self.get_collections(addr, timestamp)#done: ids of profiles of collections you got
+
+        comment_thread = threading.Thread(target= self.get_comments, args  =(id, timestamp))
+        comment_thread.start()
+        #comments = self.get_comments(id, timestamp) #done: ids of profiles you commented on
+
+        reactions_thread = threading.Thread(target= self.get_reactions, args  =(id, timestamp))
+        reactions_thread.start()
+        #reactions = self.get_reactions(id, timestamp) # done: ids of profiles you reacted on
+
+        mirrors_comments_thread = threading.Thread(target= self.get_mirrors_comments, args  =(id, timestamp))
+        mirrors_comments_thread.start()
+        #mirrors_comments = self.get_mirrors_comments(id, timestamp)#done: profiles where you mirrored a comment
         
-        collections = self.get_collections(addr, timestamp)#done: ids of profiles of collections you got  
-        comments = self.get_comments(id, timestamp) #done: ids of profiles you commented on
-        reactions = self.get_reactions(id, timestamp) # done: ids of profiles you reacted on
-        mirrors_comments = self.get_mirrors_comments(id, timestamp)#done: profiles where you mirrored a comment
-        mirrors_posts = self.get_mirrors_posts(id,timestamp)#done: profiles where you mirrored a post
+        mirrors_posts_thread = threading.Thread(target= self.get_mirrors_posts, args  =(id, timestamp))
+        mirrors_posts_thread.start()
+        #mirrors_posts = self.get_mirrors_posts(id,timestamp)#done: profiles where you mirrored a post
+
+      
+        collection_thread.join()
+        comment_thread.join()
+        reactions_thread.join()
+        mirrors_comments_thread.join()
+        mirrors_posts_thread.join()
+
 
         mapping_factor = [
-            (collections,"collections", 1),
-            (comments, "comments",1),
-            (reactions, "reactions",1),
-            (mirrors_comments, "mirrors_comments",1),
-            (mirrors_posts, "mirrors_posts",1),
+            (self.collections,"collections", 1),
+            (self.comments, "comments",1),
+            (self.reactions, "reactions",1),
+            (self.mirrors_comments, "mirrors_comments",1),
+            (self.mirrors_posts, "mirrors_posts",1),
         ]
 
         scores = self.calculate_scores(mapping_factor)
@@ -73,6 +99,7 @@ class BigQueryHandler:
         
 
     def query(self, query):
+        #client = bigquery.Client()
         return self.client.query(query)  # Make an API request.
     
     def get_addr(self, profile_id):
@@ -117,18 +144,19 @@ class BigQueryHandler:
         pub_ids_of_collections = [(row["publication_id"], row["block_timestamp"]) for row in result]
         #profile id is the first part of publication id
         profile_ids_of_collection = [(x.split("-")[0], y) for x, y in pub_ids_of_collections]
-        return profile_ids_of_collection
+        self.collections =  profile_ids_of_collection
+
     def get_comments(self, profile_id, timestamp):
         result =  self.get_query_with_profile_id("comments",profile_id, timestamp )
         profile_ids_you_commented_on = [(row["profile_id"], row["block_timestamp"]) for row in result]
-        return profile_ids_you_commented_on
+        self.comments =  profile_ids_you_commented_on
 
     def get_reactions(self, profile_id, timestamp):
         result =  self.get_query_with_profile_id("reactions",profile_id, timestamp )
         publication_ids_you_reacted_on = [(row["publication_id"], row["action_at"]) for row in result]
         #profile id is the first part of publication id
         profile_ids_you_reacted_on = [(x.split("-")[0],y) for x,y in publication_ids_you_reacted_on]
-        return profile_ids_you_reacted_on
+        self.reactions =  profile_ids_you_reacted_on
 
     def get_mirrors_comments(self, profile_id, timestamp):
         result =  self.get_query_with_profile_id("mirrors_comments_sub",profile_id, timestamp )
@@ -146,7 +174,7 @@ class BigQueryHandler:
 
         profile_ids_and_timestamps = self.match_tuples(post_ids_and_profile_ids, post_ids_and_profile_ids)
 
-        return profiles_which_comments_the_id_mirrored
+        self.mirrors_comments =  profiles_which_comments_the_id_mirrored
     
     def get_mirrors_posts(self, profile_id, timestamp):
         result =  self.get_query_with_profile_id("mirrors_posts_sub",profile_id, timestamp )
@@ -165,7 +193,7 @@ class BigQueryHandler:
 
         profile_ids_and_timestamps = self.match_tuples(post_ids_and_profile_ids, post_ids_and_timestamps)
 
-        return profile_ids_and_timestamps
+        self.mirrors_posts =  profile_ids_and_timestamps
 
 
     def match_tuples(self, t1, t2):
@@ -178,20 +206,6 @@ class BigQueryHandler:
             if t[0] in t2_dict:
                 result.append((t[1], t2_dict[t[0]]))
         return result
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     def get_query_with_profile_id(self, template_type, profile_id, timestamp = None):
@@ -209,7 +223,7 @@ class BigQueryHandler:
         if template_type not in templates:
             raise ValueError(f"wrong template type handed over: {template_type}")
         
-        print(f"Fetching {template_type}...")
+        print(f"Fetching {template_type}...", flush= True)
         
         template = templates[template_type]
 
@@ -233,7 +247,7 @@ class BigQueryHandler:
         if template_type not in templates:
             raise ValueError(f"wrong template type handed over: {template_type}")
         
-        print(f"Fetching {template_type}...")
+        print(f"Fetching {template_type}...", flush = True)
         
         template = templates[template_type]
 
